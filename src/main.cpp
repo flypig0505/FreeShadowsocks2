@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <tuple>
 #include <unordered_set>
+#include <cctype>
 
 #include <cpr/cpr.h>
 #include <rapidjson/document.h>
@@ -13,21 +14,21 @@
 
 typedef rapidjson::Document::AllocatorType Allocator;
 
-struct page_t {
-	page_t(std::string url, std::string regex, std::initializer_list<std::string> fields) : url(url), regex(regex), fields(fields) {
+std::string toString(const rapidjson::Value& v) {
+	return v.IsString() ? std::string(v.GetString(), v.GetStringLength()) : std::string();
+}
+
+
+struct Page {
+	Page(std::string url, std::string regex, std::initializer_list<std::string> fields) : url(url), regex(regex), fields(fields) {
 		
+	}
+	Page(std::string url, std::string regex, std::vector<std::string> fields) : url(url), regex(regex), fields(fields) {
+
 	}
 	cpr::Url url;
 	std::regex regex;
 	std::vector<std::string> fields;
-};
-
-page_t pages[] = {
-	{
-		"http://www.ishadowsocks.org/",
-		"<h4>[^<:]+:([^<]+)</h4>\\s+<h4>[^<:]+:([0-9]+)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>",
-		{ "server", "server_port", "password", "method" }
-	}
 };
 
 bool is_essential(const std::string& field) {
@@ -49,6 +50,13 @@ void fillAccount(const std::smatch& mr, const std::vector<std::string>& fields, 
 			return;
 		conf.AddMember(rapidjson::Value(f, allocator), rapidjson::Value(v, allocator), allocator);
 	}
+	auto s = toString(conf["method"]);
+	if (s.empty())
+		return;
+
+	std::transform(s.begin(), s.end(), s.begin(), tolower);
+	conf["method"].SetString(s, allocator);
+
 	configs.PushBack(std::move(conf), allocator);
 }
 
@@ -64,7 +72,6 @@ rapidjson::Value parsePage(const std::string& s, const std::regex& r, const std:
 	catch (std::regex_error& e) {
 		std::cerr << e.what() << std::endl;
 	}
-
 	return configs;
 }
 
@@ -102,18 +109,14 @@ std::unique_ptr<FILE, int(*)(FILE*)> openf(const char* filename, const char* mod
 	return std::unique_ptr<FILE, int(*)(FILE*)>(f, fclose);
 }
 
-rapidjson::Document load(const char* filename) {
+rapidjson::Document load(const char* filename, rapidjson::Type type) {
 	auto fp = openf(filename, "rt");
-	rapidjson::Document d(rapidjson::kObjectType);
+	rapidjson::Document d(type);
 
 	if (fp) {
 		char readBuffer[65536];
 		rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 		d.ParseStream(is);
-	}
-
-	if (!d.HasMember("configs")) {
-		d.AddMember("configs", rapidjson::Value(rapidjson::kArrayType), d.GetAllocator());
 	}
 
 	return std::move(d);
@@ -128,22 +131,66 @@ void save(const rapidjson::Document& doc, const char* filename) {
 	doc.Accept(writer);
 }
 
+
+std::vector<Page> loadPagesConfig(const char* filename) {
+	auto d = load(filename, rapidjson::kArrayType);
+	if (!d.IsArray())
+		return std::vector<Page>();
+
+	std::vector<Page> pages;
+	for (auto& p : d.GetArray()) {
+		if (!p.IsObject())
+			continue;
+		auto url = toString(p["url"]);
+		auto regex = toString(p["regex"]);
+
+		if (url.empty() || regex.empty())
+			continue;
+
+		std::vector<std::string> fields;
+		if (!p.HasMember("fields")) {
+			fields = {
+				"server",
+				"server_port",
+				"password",
+				"method"
+			};
+		}
+		else {
+			for (auto& field : p["fields"].GetArray()) {
+				if (field.IsString()) {
+					fields.emplace_back(field.GetString(), field.GetStringLength());
+				}
+			}
+			if (fields.size() < 4)
+				continue;
+		}
+		pages.emplace_back(url, regex, fields);
+	}
+	return pages;
+}
+
 int main()
 {
 	static auto filename = "gui-config.json";
-	auto doc = load(filename);
-
+	auto doc = load(filename, rapidjson::kObjectType);
 	auto& allocator = doc.GetAllocator();
 
+	if (!doc.HasMember("configs")) {
+		doc.AddMember("configs", rapidjson::Value(rapidjson::kArrayType), allocator);
+	}
 
-	for (const auto& p : pages) {
+	for (const auto& p : loadPagesConfig("FreeShadowsocks.json")) {
 		auto r = cpr::Get(p.url);
-		if (r.status_code != 200)
+		if (r.status_code != 200) {
+			std::cerr << r.status_code << " " << p.url << std::endl;
 			continue;
+		}
+			
 
 
 		auto v = parsePage(r.text, p.regex, p.fields, allocator);
-
+		std::cout << v.Size() << " accounts got form " << p.url << std::endl;
 		merge(doc["configs"], std::move(v), allocator);
 	}
 
