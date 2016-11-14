@@ -2,39 +2,63 @@
 #include <regex>
 #include <unordered_map>
 #include <cstdio>
+#include <tuple>
+#include <unordered_set>
+
 #include <cpr/cpr.h>
 #include <rapidjson/document.h>
 #include <rapidjson/filereadstream.h>
 #include <rapidjson/filewritestream.h>
 #include <rapidjson/prettywriter.h>
 
-template<rapidjson::SizeType N>
-void addMember(rapidjson::Value& object, const char(&key)[N], const std::string& s, rapidjson::Document::AllocatorType& allocator) {
-	object.AddMember(key, rapidjson::Value(s, allocator), allocator);
+typedef rapidjson::Document::AllocatorType Allocator;
+
+struct page_t {
+	page_t(std::string url, std::string regex, std::initializer_list<std::string> fields) : url(url), regex(regex), fields(fields) {
+		
+	}
+	cpr::Url url;
+	std::regex regex;
+	std::vector<std::string> fields;
+};
+
+page_t pages[] = {
+	{
+		"http://www.ishadowsocks.org/",
+		"<h4>[^<:]+:([^<]+)</h4>\\s+<h4>[^<:]+:([0-9]+)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>",
+		{ "server", "server_port", "password", "method" }
+	}
+};
+
+bool is_essential(const std::string& field) {
+	static const std::unordered_set<std::string> essential_fields{ "server", "server_port", "password", "method" };
+	return essential_fields.find(field) != essential_fields.end();
 }
 
-rapidjson::Value parse(const std::string& s, rapidjson::Document::AllocatorType& allocator) {
+
+void fillAccount(const std::smatch& mr, const std::vector<std::string>& fields, rapidjson::Value& configs, rapidjson::Document::AllocatorType& allocator) {
+	
+	auto conf = rapidjson::Value(rapidjson::kObjectType);
+
+	auto i = ++mr.cbegin(); // skip the whole match
+	for (const auto& f : fields) {
+		if (i == mr.cend())
+			return;
+		auto v = (i++)->str();
+		if (v.empty() && is_essential(f))
+			return;
+		conf.AddMember(rapidjson::Value(f, allocator), rapidjson::Value(v, allocator), allocator);
+	}
+	configs.PushBack(std::move(conf), allocator);
+}
+
+rapidjson::Value parsePage(const std::string& s, const std::regex& r, const std::vector<std::string>& fields, rapidjson::Document::AllocatorType& allocator) {
 	auto configs = rapidjson::Value(rapidjson::kArrayType);
 	try {
-		std::regex r("<h4>[^<:]+:([^<]+)</h4>\\s+<h4>[^<:]+:([0-9]+)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>");
-
 		auto it = std::sregex_iterator(s.begin(), s.end(), r);
 		auto end = std::sregex_iterator();
 		for (; it != end; ++it) {
-			auto conf = rapidjson::Value(rapidjson::kObjectType);
-
-			auto i = it->cbegin();
-			auto server = (++i)->str();
-			conf.AddMember("server", rapidjson::Value(server, allocator), allocator);
-			conf.AddMember("server_port", rapidjson::Value(std::stoi((++i)->str())), allocator);
-			auto password = (++i)->str();
-			if (password.empty())
-				continue;
-			conf.AddMember("password", rapidjson::Value(password, allocator), allocator);
-			conf.AddMember("method", rapidjson::Value((++i)->str(), allocator), allocator);
-			conf.AddMember("auth", rapidjson::Value(false), allocator);
-
-			configs.PushBack(std::move(conf), allocator);
+			fillAccount(*it, fields, configs, allocator);
 		}
 	}
 	catch (std::regex_error& e) {
@@ -106,18 +130,22 @@ void save(const rapidjson::Document& doc, const char* filename) {
 
 int main()
 {
-	auto r = cpr::Get(cpr::Url{ "http://www.ishadowsocks.org/" });
-	if (r.status_code != 200)
-		return -1;
-
 	static auto filename = "gui-config.json";
 	auto doc = load(filename);
 
 	auto& allocator = doc.GetAllocator();
-	
-	auto v = parse(r.text, allocator);
 
-	merge(doc["configs"], std::move(v), allocator);
+
+	for (const auto& p : pages) {
+		auto r = cpr::Get(p.url);
+		if (r.status_code != 200)
+			continue;
+
+
+		auto v = parsePage(r.text, p.regex, p.fields, allocator);
+
+		merge(doc["configs"], std::move(v), allocator);
+	}
 
 	save(doc, filename);
 	return 0;
