@@ -5,3 +5,8 @@ root = true
 [*.{cpp,hpp,lua}]
 indent_style = tab
 indent_size = 2
+
+
+[{CMakeLists.txt,*.cmake}]
+indent_style = space
+indent_size = 4

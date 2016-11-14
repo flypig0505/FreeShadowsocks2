@@ -21,5 +21,14 @@ add_subdirectory(deps/cpr) # defines CPR_INCLUDE_DIRS and CPR_LIBRARIES
 add_definitions(-DRAPIDJSON_HAS_STDSTRING=1)
 include_directories(${CPR_INCLUDE_DIRS} deps/rapidjson/include)
 add_executable(FreeShadowsocks src/main.cpp)
-source_group(src FILES src/main.cpp)
+source_group(src FILES src/main.cpp src/FreeShadowsocks.json)
 target_link_libraries(FreeShadowsocks ${CPR_LIBRARIES})
+
+add_custom_command(TARGET FreeShadowsocks POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/src/FreeShadowsocks.json ${CMAKE_CURRENT_BINARY_DIR}/FreeShadowsocks.json
+    COMMENT "Copy config file..."
+)
+add_custom_command(TARGET FreeShadowsocks POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/src/FreeShadowsocks.json $<TARGET_FILE_DIR:FreeShadowsocks>/FreeShadowsocks.json
+    COMMENT "Copy config file..."
+)

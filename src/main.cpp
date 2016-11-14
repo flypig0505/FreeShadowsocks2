@@ -186,8 +186,6 @@ int main()
 			std::cerr << r.status_code << " " << p.url << std::endl;
 			continue;
 		}
-			
-
 
 		auto v = parsePage(r.text, p.regex, p.fields, allocator);
 		std::cout << v.Size() << " accounts got form " << p.url << std::endl;

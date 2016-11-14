@@ -1,0 +1,14 @@
+[
+  {
+    "url": "http://www.ishadowsocks.org/",
+    "regex": "<h4>[^<:]+:([^<]+)</h4>\\s+<h4>[^<:]+:([0-9]+)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>\\s+<h4>[^<:]+:([^<]*)</h4>"
+  },
+  {
+    "url": "http://www.ramin.n.nu/",
+    "regex": "Server IP : ([\\d\\.]+).{5,40}Server Port : (\\d+).{5,40}Password : ([^<]+).{5,40}Proxy Port ：\\d+.{5,40}Encyption: ([^<]+)"
+  },
+  {
+    "url": "http://freevpnss.cc/",
+    "regex": "<p>服务器地址：([\\w\\.]+)</p>\\s+<p>端口：(\\d+)</p>\\s+<p>密<span class=\"hidden\">\\w</span>码：([^<]+)</p>\\s+<p>加密方式：([^<]+)</p>"
+  }
+]
